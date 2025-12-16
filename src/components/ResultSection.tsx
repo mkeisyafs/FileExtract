@@ -225,8 +225,7 @@ export function ResultSection({
                     searchTerm={searchTerm}
                   />
 
-                  {/* Archive Contents */}
-                  {file.contents && (
+                  {file.contents ? (
                     <div className="mt-4">
                       <MetadataTable
                         data={file.contents}
@@ -234,10 +233,10 @@ export function ResultSection({
                         searchTerm={searchTerm}
                       />
                     </div>
-                  )}
+                  ) : null}
 
                   {/* Parsed Content (for character cards, JSON files, etc.) */}
-                  {file.contentParsed && (
+                  {file.contentParsed ? (
                     <div className="mt-4">
                       <MetadataTable
                         data={file.contentParsed}
@@ -245,7 +244,7 @@ export function ResultSection({
                         searchTerm={searchTerm}
                       />
                     </div>
-                  )}
+                  ) : null}
 
                   {/* Raw Content (for text files without parsing) */}
                   {file.content &&
