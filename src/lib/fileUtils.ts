@@ -74,6 +74,10 @@ export function isZipFile(ext: string): boolean {
   return zipExtensions.includes(ext.toLowerCase());
 }
 
+export function isCharxFile(ext: string): boolean {
+  return ext.toLowerCase() === "charx";
+}
+
 export function isPngFile(ext: string): boolean {
   return ext.toLowerCase() === "png";
 }
@@ -201,7 +205,8 @@ function tryParseJSON(text: string): unknown {
   }
 }
 
-export async function extractZipContent(
+// Special extraction for CHARX files (character card format)
+export async function extractCharxContent(
   file: File
 ): Promise<Partial<ExtractedFile>> {
   try {
@@ -209,12 +214,88 @@ export async function extractZipContent(
     const contents: ZipContents = {};
     const fileList: string[] = [];
 
+    // Structured data for charx
+    let characterData: unknown = null;
+    const regexScripts: Array<{
+      filename: string;
+      data: unknown;
+    }> = [];
+    const assets: Array<{
+      filename: string;
+      type: string;
+      content: string;
+    }> = [];
+
     for (const [filename, zipEntry] of Object.entries(zip.files)) {
       if (!zipEntry.dir) {
         fileList.push(filename);
-        const ext = filename.split(".").pop()?.toLowerCase() || "";
 
-        if (
+        // Properly detect extension
+        const lastDotIndex = filename.lastIndexOf(".");
+        const lastSlashIndex = Math.max(
+          filename.lastIndexOf("/"),
+          filename.lastIndexOf("\\")
+        );
+        const hasExtension = lastDotIndex > lastSlashIndex && lastDotIndex > 0;
+        const ext = hasExtension
+          ? filename.slice(lastDotIndex + 1).toLowerCase()
+          : "";
+
+        const baseFilename = filename.split("/").pop() || filename;
+
+        // Extract card.json - the main character data
+        if (baseFilename === "card.json" || filename === "card.json") {
+          const text = await zipEntry.async("text");
+          characterData = tryParseJSON(text);
+          contents[filename] = {
+            type: "text",
+            extension: "json",
+            size: text.length,
+            content: text,
+            parsed: characterData,
+          };
+        }
+        // Check for regex scripts in extensions/regex_scripts/ folder
+        else if (
+          filename.includes("regex_scripts/") ||
+          filename.includes("regex_scripts\\")
+        ) {
+          const text = await zipEntry.async("text");
+          const parsed = tryParseJSON(text);
+          if (parsed) {
+            regexScripts.push({
+              filename: baseFilename,
+              data: parsed,
+            });
+          }
+          contents[filename] = {
+            type: "text",
+            extension: ext || "json",
+            size: text.length,
+            content: text,
+            parsed: parsed || undefined,
+          };
+        }
+        // Handle images/assets
+        else if (["png", "jpg", "jpeg", "gif", "webp", "bmp"].includes(ext)) {
+          const base64 = await zipEntry.async("base64");
+          const imgContent = `data:image/${
+            ext === "jpg" ? "jpeg" : ext
+          };base64,${base64}`;
+          assets.push({
+            filename: baseFilename,
+            type: "image",
+            content: imgContent,
+          });
+          contents[filename] = {
+            type: "image",
+            extension: ext,
+            size: base64.length,
+            content: imgContent,
+          };
+        }
+        // Handle other text files
+        else if (
           [
             "json",
             "txt",
@@ -235,7 +316,194 @@ export async function extractZipContent(
             content: text,
             parsed: ext === "json" ? tryParseJSON(text) : undefined,
           };
-        } else if (["png", "jpg", "jpeg", "gif", "webp", "bmp"].includes(ext)) {
+        }
+        // Try to read unknown files as text
+        else {
+          try {
+            const text = await zipEntry.async("text");
+            const isBinaryLike = /[\x00-\x08\x0E-\x1F]/.test(
+              text.slice(0, 1000)
+            );
+
+            if (!isBinaryLike && text.length > 0) {
+              const parsed = tryParseJSON(text);
+              // Check if this might be a regex script based on content
+              if (parsed && typeof parsed === "object" && parsed !== null) {
+                const obj = parsed as Record<string, unknown>;
+                // Check for regex script structure:
+                // Format 1: { type: "regex", data: [{ comment, in, out, type, ableFlag }] }
+                // Format 2: Individual item with "in" and "out" fields
+                if (
+                  (obj.type === "regex" && Array.isArray(obj.data)) ||
+                  ("in" in obj && "out" in obj) ||
+                  ("comment" in obj && "in" in obj)
+                ) {
+                  regexScripts.push({
+                    filename: baseFilename,
+                    data: parsed,
+                  });
+                }
+              }
+              contents[filename] = {
+                type: "text",
+                extension: ext || "txt",
+                size: text.length,
+                content: text,
+                parsed: parsed || undefined,
+              };
+            } else {
+              contents[filename] = {
+                type: "binary",
+                extension: ext,
+                size: 0,
+                content: "[Binary file - not extracted]",
+              };
+            }
+          } catch {
+            contents[filename] = {
+              type: "binary",
+              extension: ext,
+              size: 0,
+              content: "[Binary file - not extracted]",
+            };
+          }
+        }
+      }
+    }
+
+    // Also check if regex_scripts are embedded in card.json
+    if (characterData && typeof characterData === "object") {
+      const cardData = characterData as Record<string, unknown>;
+
+      // Helper function to extract regex scripts from various formats
+      const extractRegexFromValue = (value: unknown, prefix: string) => {
+        if (!value) return;
+
+        // Format 1: Array of scripts directly
+        if (Array.isArray(value)) {
+          value.forEach((script: unknown, index: number) => {
+            regexScripts.push({
+              filename: `${prefix}_${index + 1}`,
+              data: script,
+            });
+          });
+        }
+        // Format 2: Object with { type: "regex", data: [...] }
+        else if (typeof value === "object" && value !== null) {
+          const obj = value as Record<string, unknown>;
+          if (obj.type === "regex" && Array.isArray(obj.data)) {
+            obj.data.forEach((script: unknown, index: number) => {
+              regexScripts.push({
+                filename: `${prefix}_${index + 1}`,
+                data: script,
+              });
+            });
+          }
+        }
+      };
+
+      // Check data.extensions.regex_scripts
+      if (cardData.data && typeof cardData.data === "object") {
+        const data = cardData.data as Record<string, unknown>;
+        if (data.extensions && typeof data.extensions === "object") {
+          const extensions = data.extensions as Record<string, unknown>;
+          extractRegexFromValue(extensions.regex_scripts, "embedded_regex");
+        }
+        // Also check data.regex_scripts directly
+        extractRegexFromValue(data.regex_scripts, "data_regex");
+      }
+
+      // Check top-level extensions.regex_scripts
+      if (cardData.extensions && typeof cardData.extensions === "object") {
+        const extensions = cardData.extensions as Record<string, unknown>;
+        if (regexScripts.length === 0) {
+          // Avoid duplicates
+          extractRegexFromValue(extensions.regex_scripts, "ext_regex");
+        }
+      }
+
+      // Check top-level regex_scripts
+      if (regexScripts.length === 0) {
+        // Avoid duplicates
+        extractRegexFromValue(cardData.regex_scripts, "card_regex");
+      }
+    }
+
+    // Create a structured parsed content for charx
+    const charxParsed = {
+      characterData,
+      regexScripts: regexScripts.length > 0 ? regexScripts : undefined,
+      assets:
+        assets.length > 0
+          ? assets.map((a) => ({ filename: a.filename, type: a.type }))
+          : undefined,
+    };
+
+    return {
+      isArchive: true,
+      archiveType: "charx",
+      totalFiles: fileList.length,
+      fileList,
+      contents,
+      contentParsed: charxParsed,
+    };
+  } catch (error) {
+    return {
+      isArchive: false,
+      error: "Failed to extract charx: " + (error as Error).message,
+    };
+  }
+}
+
+export async function extractZipContent(
+  file: File
+): Promise<Partial<ExtractedFile>> {
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const contents: ZipContents = {};
+    const fileList: string[] = [];
+
+    for (const [filename, zipEntry] of Object.entries(zip.files)) {
+      if (!zipEntry.dir) {
+        fileList.push(filename);
+
+        // Properly detect extension - check if file actually has an extension
+        const lastDotIndex = filename.lastIndexOf(".");
+        const lastSlashIndex = Math.max(
+          filename.lastIndexOf("/"),
+          filename.lastIndexOf("\\")
+        );
+        const hasExtension = lastDotIndex > lastSlashIndex && lastDotIndex > 0;
+        const ext = hasExtension
+          ? filename.slice(lastDotIndex + 1).toLowerCase()
+          : "";
+
+        // Text file extensions
+        const textExtensions = [
+          "json",
+          "txt",
+          "xml",
+          "html",
+          "css",
+          "js",
+          "md",
+          "yaml",
+          "yml",
+        ];
+
+        // Image extensions
+        const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+
+        if (textExtensions.includes(ext)) {
+          const text = await zipEntry.async("text");
+          contents[filename] = {
+            type: "text",
+            extension: ext,
+            size: text.length,
+            content: text,
+            parsed: ext === "json" ? tryParseJSON(text) : undefined,
+          };
+        } else if (imageExtensions.includes(ext)) {
           const base64 = await zipEntry.async("base64");
           contents[filename] = {
             type: "image",
@@ -246,12 +514,41 @@ export async function extractZipContent(
             };base64,${base64}`,
           };
         } else {
-          contents[filename] = {
-            type: "binary",
-            extension: ext,
-            size: 0,
-            content: "[Binary file - not extracted]",
-          };
+          // For files without recognized extension or unknown extensions,
+          // try to read as text first (common for charx regex scripts)
+          try {
+            const text = await zipEntry.async("text");
+            // Check if it's valid text (not binary garbage)
+            const isBinaryLike = /[\x00-\x08\x0E-\x1F]/.test(
+              text.slice(0, 1000)
+            );
+
+            if (!isBinaryLike && text.length > 0) {
+              // Try to parse as JSON
+              const parsed = tryParseJSON(text);
+              contents[filename] = {
+                type: "text",
+                extension: ext || "txt",
+                size: text.length,
+                content: text,
+                parsed: parsed || undefined,
+              };
+            } else {
+              contents[filename] = {
+                type: "binary",
+                extension: ext,
+                size: 0,
+                content: "[Binary file - not extracted]",
+              };
+            }
+          } catch {
+            contents[filename] = {
+              type: "binary",
+              extension: ext,
+              size: 0,
+              content: "[Binary file - not extracted]",
+            };
+          }
         }
       }
     }
@@ -283,34 +580,52 @@ export async function extractZipMetadata(
     for (const [filename, zipEntry] of Object.entries(zip.files)) {
       if (!zipEntry.dir) {
         fileList.push(filename);
-        const ext = filename.split(".").pop()?.toLowerCase() || "";
+
+        // Properly detect extension - check if file actually has an extension
+        const lastDotIndex = filename.lastIndexOf(".");
+        const lastSlashIndex = Math.max(
+          filename.lastIndexOf("/"),
+          filename.lastIndexOf("\\")
+        );
+        const hasExtension = lastDotIndex > lastSlashIndex && lastDotIndex > 0;
+        const ext = hasExtension
+          ? filename.slice(lastDotIndex + 1).toLowerCase()
+          : "";
+
         const size =
           (zipEntry as unknown as { _data?: { uncompressedSize?: number } })
             ._data?.uncompressedSize || 0;
 
+        // Text file extensions
+        const textExtensions = [
+          "json",
+          "txt",
+          "xml",
+          "html",
+          "css",
+          "js",
+          "md",
+          "yaml",
+          "yml",
+        ];
+
+        // Image extensions
+        const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+
         // Determine file type based on extension
         let fileType: "text" | "image" | "binary" = "binary";
-        if (
-          [
-            "json",
-            "txt",
-            "xml",
-            "html",
-            "css",
-            "js",
-            "md",
-            "yaml",
-            "yml",
-          ].includes(ext)
-        ) {
+        if (textExtensions.includes(ext)) {
           fileType = "text";
-        } else if (["png", "jpg", "jpeg", "gif", "webp", "bmp"].includes(ext)) {
+        } else if (imageExtensions.includes(ext)) {
           fileType = "image";
+        } else if (ext === "") {
+          // Files without extension - assume text (common for charx regex scripts)
+          fileType = "text";
         }
 
         contents[filename] = {
           type: fileType,
-          extension: ext,
+          extension: ext || "txt",
           size: size,
         };
       }
