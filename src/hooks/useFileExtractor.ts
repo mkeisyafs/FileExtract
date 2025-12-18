@@ -26,107 +26,16 @@ export function useFileExtractor() {
   }, []);
 
   const addFiles = useCallback(
-    async (files: FileList | File[]) => {
+    (files: FileList | File[]) => {
       const newFiles = Array.from(files).filter(
         (file) => !selectedFiles.some((f) => f.name === file.name)
       );
 
-      // Check for charx or png files that need auto-extraction
-      const charxOrPngFiles = newFiles.filter((file) => {
-        const ext = file.name.split(".").pop()?.toLowerCase() || "";
-        return isCharxFile(ext) || isPngFile(ext);
-      });
-      const otherFiles = newFiles.filter((file) => {
-        const ext = file.name.split(".").pop()?.toLowerCase() || "";
-        return !isCharxFile(ext) && !isPngFile(ext);
-      });
-
-      // Add non-charx/png files to selected files
-      if (otherFiles.length > 0) {
-        setSelectedFiles((prev) => [...prev, ...otherFiles]);
-      }
-
-      // Auto-extract charx and png files
-      if (charxOrPngFiles.length > 0) {
-        setIsProcessing(true);
-        try {
-          const extractedFiles = await Promise.all(
-            charxOrPngFiles.map(async (file): Promise<ExtractedFile> => {
-              const ext = file.name.split(".").pop()?.toLowerCase() || "";
-
-              const baseMetadata = {
-                filename: file.name,
-                extension: ext,
-                size: file.size,
-                sizeFormatted: formatFileSize(file.size),
-                lastModified: new Date(file.lastModified).toISOString(),
-                mimeType: file.type || "application/octet-stream",
-              };
-
-              // Handle PNG files
-              if (isPngFile(ext)) {
-                const pngData = await extractPngMetadata(file);
-                if (pngData.embeddedJson) {
-                  return {
-                    ...baseMetadata,
-                    content: "[PNG Image - Character Card Detected]",
-                    contentParsed: pngData.embeddedJson,
-                    isArchive: true,
-                    archiveType: "character_card",
-                  };
-                } else {
-                  return {
-                    ...baseMetadata,
-                    content: "[PNG Image - No embedded data found]",
-                  };
-                }
-              }
-
-              // Handle CHARX files
-              if (isCharxFile(ext)) {
-                const charxContent = await extractCharxContent(file);
-                return {
-                  ...baseMetadata,
-                  ...charxContent,
-                };
-              }
-
-              return baseMetadata;
-            })
-          );
-
-          const extractionResult: ExtractionResult = {
-            extractedAt: new Date().toISOString(),
-            totalFiles: extractedFiles.length,
-            extractionMode: "full",
-            files: extractedFiles,
-          };
-
-          setResult(extractionResult);
-
-          // Check if regex scripts were found
-          const hasRegexScripts = extractedFiles.some((f) => {
-            if (f.contentParsed && typeof f.contentParsed === "object") {
-              const parsed = f.contentParsed as Record<string, unknown>;
-              return (
-                parsed.regexScripts &&
-                Array.isArray(parsed.regexScripts) &&
-                parsed.regexScripts.length > 0
-              );
-            }
-            return false;
-          });
-
-          if (hasRegexScripts) {
-            showToast("✨ Character card extracted! Regex scripts detected!");
-          } else {
-            showToast("✨ Character card extracted automatically!");
-          }
-        } catch (error) {
-          showToast("Error: " + (error as Error).message);
-        } finally {
-          setIsProcessing(false);
-        }
+      if (newFiles.length > 0) {
+        setSelectedFiles((prev) => [...prev, ...newFiles]);
+        showToast(
+          `Added ${newFiles.length} file${newFiles.length > 1 ? "s" : ""}`
+        );
       }
     },
     [selectedFiles, showToast]

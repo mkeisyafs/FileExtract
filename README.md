@@ -1,109 +1,86 @@
-# File Extractor
+# File Extractor Tool
 
-A modern web application for extracting file contents to JSON format. Built with React, TypeScript, Tailwind CSS, and DaisyUI.
+A modern, powerful web application for extracting metadata and content from various file formats, with a focus on character card formats (PNG character cards, CHARX).
 
-![File Extractor](https://img.shields.io/badge/React-18-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) ![Tailwind](https://img.shields.io/badge/Tailwind-4-blue) ![DaisyUI](https://img.shields.io/badge/DaisyUI-5-green)
+![Platform](https://img.shields.io/badge/Platform-Web-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 ## ✨ Features
 
-- **Drag & Drop Upload** - Simply drag files or click to select
-- **Multi-file Support** - Extract multiple files at once
-- **ZIP Archive Extraction** - Supports `.charx`, `.zip`, `.epub`, `.docx`, `.xlsx`, and more
-- **Full Extract Mode** - Get complete file contents including parsed JSON, CSV, XML
-- **Metadata Only Mode** - Extract only file metadata without content
-- **Image Gallery** - Preview and download images from ZIP archives
-- **Copy & Download** - Export results as JSON
-
-## 🛠️ Tech Stack
-
-- **Vite** - Build tool
-- **React 18** - UI framework
-- **TypeScript** - Type safety
-- **Tailwind CSS v4** - Styling
-- **DaisyUI** - UI components
-- **Lucide React** - Icons
-- **JSZip** - ZIP file handling
-- **React Router** - Routing
-
-## 📁 Project Structure
-
-```
-src/
-├── components/
-│   ├── ActionButtons.tsx    # Extract & Clear buttons
-│   ├── FileList.tsx         # Selected files display
-│   ├── Header.tsx           # App header
-│   ├── ImageGallery.tsx     # Image preview & download
-│   ├── ResultSection.tsx    # JSON output display
-│   ├── ToggleSwitch.tsx     # Extract mode toggle
-│   └── UploadArea.tsx       # Drag & drop zone
-├── hooks/
-│   └── useFileExtractor.ts  # Main extraction logic
-├── lib/
-│   └── fileUtils.ts         # File utilities & types
-├── pages/
-│   └── Extractor.tsx        # Main page component
-├── App.tsx                  # Router provider
-├── router.tsx               # Route definitions
-├── main.tsx                 # Entry point
-└── index.css                # Global styles
-```
+- **Multi-File Support**: Drag & drop or select multiple files at once.
+- **Format Support**:
+  - **Text & Code**: JSON, JS, TS, HTML, CSS, XML, MD, YAML, etc.
+  - **Archives**: ZIP, CHARX, EPUB, DOCX, APK, JAR, etc.
+  - **Images**: PNG, JPG, WEBP, GIF (extracts metadata and embedded JSON).
+- **Character Card Specialized**: Specifically optimized for extracting data from:
+  - **PNG Cards**: Extracts embedded `chara` chunks (tEXt/iTXt) including base64 JSON.
+  - **CHARX**: Extracts character data, regex scripts, and assets.
+- **Deep Extraction**: Recursively inspects nested ZIPs and objects.
+- **Smart Search**: Real-time filtering and highlighting of metadata keys and values.
+- **Premium UI**:
+  - Glassmorphism aesthetic with animated backgrounds.
+  - Horizontal scrolling for wide data tables.
+  - Syntax-highlighted JSON viewer.
+  - Dark mode optimized.
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js (v16 or higher)
 - npm or yarn
 
 ### Installation
 
-```bash
-# Clone the repository
-git clone <repository-url>
-cd FileExtract
+1.  Clone the repository:
 
-# Install dependencies
-npm install
+    ```bash
+    git clone https://github.com/yourusername/file-extract.git
+    cd file-extract
+    ```
 
-# Start development server
-npm run dev
-```
+2.  Install dependencies:
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+    ```bash
+    npm install
+    ```
 
-### Build for Production
+3.  Start the development server:
 
-```bash
-npm run build
-```
+    ```bash
+    npm run dev
+    ```
 
-## 📖 Usage
+4.  Open your browser and navigate to `http://localhost:5173` (or the port shown in your terminal).
 
-1. **Upload Files** - Drag & drop files or click the upload area
-2. **Select Mode** - Choose "Full Extract" or "Metadata Only"
-3. **Extract** - Click "Extract to JSON" button
-4. **View Results** - See the JSON output below
-5. **Export** - Copy to clipboard or download as JSON file
-6. **Images** - For ZIP files, view and download extracted images
+## 🛠️ Usage
 
-## 📦 Supported File Types
+1.  **Upload**: Drag files into the glass-card area or click to browse.
+2.  **Toggle Mode**: Use the switch to choose between "Full Extract" (content + metadata) or "Metadata Only" (faster, just info).
+3.  **Review**: See your selected files in the grid list.
+4.  **Extract**: Click "Extract Metadata" to process.
+5.  **Explore**:
+    - **Table View**: Browse structured data. Expand objects, view images, and copy values.
+    - **JSON View**: See the raw output with syntax highlighting.
+6.  **Export**: Download the full result as a JSON file.
 
-### Text Files
+## 🏗️ Tech Stack
 
-- JSON, CSV, XML, TXT, MD, YAML, HTML, CSS, JS
+- **Frontend**: React, TypeScript, Vite
+- **Styling**: Tailwind CSS, DaisyUI
+- **Icons**: Lucide React
+- **File Handling**: JSZip
 
-### Archive Files
+## 🤝 Contributing
 
-- `.charx`, `.zip`, `.cbz`, `.epub`
-- `.docx`, `.xlsx`, `.pptx`
-- `.odt`, `.ods`, `.odp`
-- `.apk`, `.jar`
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-### Images (in archives)
-
-- PNG, JPG, JPEG, GIF, WEBP, BMP
+1.  Fork the project
+2.  Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3.  Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4.  Push to the branch (`git push origin feature/AmazingFeature`)
+5.  Open a Pull Request
 
 ## 📄 License
 
-MIT License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

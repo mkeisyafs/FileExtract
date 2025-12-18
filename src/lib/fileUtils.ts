@@ -137,7 +137,7 @@ export async function extractPngMetadata(file: File): Promise<{
             }
           }
 
-          const keyword = new TextDecoder().decode(
+          const keyword = new TextDecoder("utf-8").decode(
             chunkData.slice(0, nullIndex)
           );
 
@@ -158,7 +158,7 @@ export async function extractPngMetadata(file: File): Promise<{
               textStart++; // Skip null
             }
 
-            const base64Text = new TextDecoder().decode(
+            const base64Text = new TextDecoder("utf-8").decode(
               chunkData.slice(textStart)
             );
 
@@ -649,9 +649,17 @@ export async function extractZipMetadata(
 export function readFileContent(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target?.result as string);
+    reader.onload = (e) => {
+      try {
+        const buffer = e.target?.result as ArrayBuffer;
+        const text = new TextDecoder("utf-8").decode(buffer);
+        resolve(text);
+      } catch (err) {
+        reject(err);
+      }
+    };
     reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   });
 }
 

@@ -23,18 +23,22 @@ export function Extractor() {
   } = useFileExtractor();
 
   return (
-    <div className="min-h-screen relative overflow-hidden" data-theme="dark">
+    <div
+      className="min-h-screen relative overflow-hidden selection:bg-primary/30 selection:text-primary-content"
+      data-theme="dark"
+    >
       {/* Background Effects */}
-      <div className="fixed inset-0 -z-10 pointer-events-none">
-        <div className="blob blob-1"></div>
-        <div className="blob blob-2"></div>
-        <div className="blob blob-3"></div>
+      <div className="fixed inset-0 -z-10 pointer-events-none bg-[#0f0f1a] bg-grid">
+        <div className="absolute inset-0 bg-linear-to-b from-transparent via-[#0f0f1a]/50 to-[#0f0f1a]"></div>
+        <div className="blob blob-1 opacity-20 mix-blend-screen"></div>
+        <div className="blob blob-2 opacity-20 mix-blend-screen"></div>
+        <div className="blob blob-3 opacity-20 mix-blend-screen"></div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-5 py-10 flex flex-col min-h-screen">
+      <div className="container max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col min-h-screen relative z-10">
         <Header />
 
-        <main className="flex-1">
+        <main className="flex-1 w-full space-y-8 animate-[fadeIn_0.5s_ease-out]">
           <UploadArea
             onFilesAdded={addFiles}
             metadataOnly={metadataOnly}
@@ -59,8 +63,11 @@ export function Extractor() {
           {result && <ImageGallery result={result} />}
         </main>
 
-        <footer className="text-center py-8 text-base-content/40 text-sm">
-          <p>File Extractor Tool © 2024</p>
+        <footer className="mt-20 pt-8 border-t border-white/5 text-center">
+          <p className="text-base-content/40 text-sm font-medium">
+            File Extractor Tool &copy; {new Date().getFullYear()} &bull; Built
+            with React & Tailwind
+          </p>
         </footer>
       </div>
 

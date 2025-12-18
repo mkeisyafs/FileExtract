@@ -38,6 +38,72 @@ function countMatches(data: unknown, searchTerm: string): number {
   return count;
 }
 
+// Syntax Highlighter Component
+function SyntaxHighlightedJson({ data }: { data: unknown }) {
+  // Helper to render recursively
+  const renderValue = (value: unknown): React.ReactNode => {
+    if (value === null) return <span className="text-gray-500">null</span>;
+    if (value === undefined)
+      return <span className="text-gray-500">undefined</span>;
+    if (typeof value === "boolean")
+      return <span className="text-[#569cd6]">{value.toString()}</span>;
+    if (typeof value === "number")
+      return <span className="text-[#b5cea8]">{value}</span>;
+    if (typeof value === "string")
+      return <span className="text-[#ce9178]">"{value}"</span>;
+
+    if (Array.isArray(value)) {
+      if (value.length === 0) return <span className="text-gray-400">[]</span>;
+      return (
+        <span>
+          <span className="text-[#ffd700]">[</span>
+          <div className="pl-4 border-l border-white/5">
+            {value.map((item, index) => (
+              <div key={index}>
+                {renderValue(item)}
+                {index < value.length - 1 && (
+                  <span className="text-gray-400">,</span>
+                )}
+              </div>
+            ))}
+          </div>
+          <span className="text-[#ffd700]">]</span>
+        </span>
+      );
+    }
+
+    if (typeof value === "object") {
+      const entries = Object.entries(value as Record<string, unknown>);
+      if (entries.length === 0)
+        return <span className="text-gray-400">{"{}"}</span>;
+      return (
+        <span>
+          <span className="text-[#da70d6]">{"{"}</span>
+          <div className="pl-4 border-l border-white/5">
+            {entries.map(([key, val], index) => (
+              <div key={key}>
+                <span className="text-[#9cdcfe]">"{key}"</span>
+                <span className="text-gray-400">: </span>
+                {renderValue(val)}
+                {index < entries.length - 1 && (
+                  <span className="text-gray-400">,</span>
+                )}
+              </div>
+            ))}
+          </div>
+          <span className="text-[#da70d6]">{"}"}</span>
+        </span>
+      );
+    }
+
+    return <span>{String(value)}</span>;
+  };
+
+  return (
+    <div className="font-mono text-xs md:text-sm">{renderValue(data)}</div>
+  );
+}
+
 export function ResultSection({
   result,
   onCopy,
@@ -157,9 +223,9 @@ export function ResultSection({
         </div>
       </div>
 
-      <div className="p-6 max-h-[600px] overflow-auto">
+      <div className="p-0 overflow-hidden">
         {viewMode === "table" ? (
-          <div className="space-y-6">
+          <div className="p-6 space-y-6 max-h-[600px] overflow-auto">
             {/* Summary Section */}
             <div className="stats stats-horizontal bg-base-300/50 shadow w-full">
               <div className="stat">
@@ -297,9 +363,9 @@ export function ResultSection({
             ))}
           </div>
         ) : (
-          <pre className="font-mono text-sm leading-relaxed whitespace-pre-wrap wrap-break-word bg-base-300 p-5 rounded-xl">
-            {JSON.stringify(result, null, 2)}
-          </pre>
+          <div className="bg-[#1e1e1e] p-6 max-h-[600px] overflow-auto custom-scrollbar font-mono text-sm leading-6">
+            <SyntaxHighlightedJson data={result} />
+          </div>
         )}
       </div>
     </div>
