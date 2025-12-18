@@ -1,4 +1,4 @@
-import { useState, createContext, useContext, useMemo } from "react";
+import { useState, createContext, useContext, useMemo, useEffect } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -77,7 +77,7 @@ function HighlightedText({
   return (
     <>
       {before}
-      <mark className="bg-warning/30 text-warning-content px-0.5 rounded shadow-[0_0_10px_rgba(250,189,0,0.3)] border border-warning/50">
+      <mark className="search-match bg-warning/30 text-warning-content px-0.5 rounded shadow-[0_0_10px_rgba(250,189,0,0.3)] border border-warning/50">
         {match}
       </mark>
       {after.length > 0 && (
@@ -439,6 +439,12 @@ function NestedObjectTable({
 
   // Auto-expand if there are matching children
   const [expanded, setExpanded] = useState(depth < 1 || hasMatchingChildren);
+
+  useEffect(() => {
+    if (hasMatchingChildren) {
+      setExpanded(true);
+    }
+  }, [hasMatchingChildren]);
 
   if (data === null || data === undefined) {
     return <ValueCell value={data} />;

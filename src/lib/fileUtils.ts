@@ -245,7 +245,8 @@ export async function extractCharxContent(
 
         // Extract card.json - the main character data
         if (baseFilename === "card.json" || filename === "card.json") {
-          const text = await zipEntry.async("text");
+          const buffer = await zipEntry.async("uint8array");
+          const text = new TextDecoder("utf-8").decode(buffer);
           characterData = tryParseJSON(text);
           contents[filename] = {
             type: "text",
@@ -260,7 +261,8 @@ export async function extractCharxContent(
           filename.includes("regex_scripts/") ||
           filename.includes("regex_scripts\\")
         ) {
-          const text = await zipEntry.async("text");
+          const buffer = await zipEntry.async("uint8array");
+          const text = new TextDecoder("utf-8").decode(buffer);
           const parsed = tryParseJSON(text);
           if (parsed) {
             regexScripts.push({
@@ -308,7 +310,8 @@ export async function extractCharxContent(
             "yml",
           ].includes(ext)
         ) {
-          const text = await zipEntry.async("text");
+          const buffer = await zipEntry.async("uint8array");
+          const text = new TextDecoder("utf-8").decode(buffer);
           contents[filename] = {
             type: "text",
             extension: ext,
@@ -320,12 +323,15 @@ export async function extractCharxContent(
         // Try to read unknown files as text
         else {
           try {
-            const text = await zipEntry.async("text");
+            const buffer = await zipEntry.async("uint8array");
+            // Check for binary content before full decode if possible, but for simplicity try decode first
+            // or check first few bytes
             const isBinaryLike = /[\x00-\x08\x0E-\x1F]/.test(
-              text.slice(0, 1000)
+              new TextDecoder("utf-8").decode(buffer.slice(0, 1000))
             );
 
-            if (!isBinaryLike && text.length > 0) {
+            if (!isBinaryLike) {
+              const text = new TextDecoder("utf-8").decode(buffer);
               const parsed = tryParseJSON(text);
               // Check if this might be a regex script based on content
               if (parsed && typeof parsed === "object" && parsed !== null) {
@@ -495,7 +501,8 @@ export async function extractZipContent(
         const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
         if (textExtensions.includes(ext)) {
-          const text = await zipEntry.async("text");
+          const buffer = await zipEntry.async("uint8array");
+          const text = new TextDecoder("utf-8").decode(buffer);
           contents[filename] = {
             type: "text",
             extension: ext,
@@ -517,13 +524,14 @@ export async function extractZipContent(
           // For files without recognized extension or unknown extensions,
           // try to read as text first (common for charx regex scripts)
           try {
-            const text = await zipEntry.async("text");
+            const buffer = await zipEntry.async("uint8array");
             // Check if it's valid text (not binary garbage)
             const isBinaryLike = /[\x00-\x08\x0E-\x1F]/.test(
-              text.slice(0, 1000)
+              new TextDecoder("utf-8").decode(buffer.slice(0, 1000))
             );
 
-            if (!isBinaryLike && text.length > 0) {
+            if (!isBinaryLike) {
+              const text = new TextDecoder("utf-8").decode(buffer);
               // Try to parse as JSON
               const parsed = tryParseJSON(text);
               contents[filename] = {
