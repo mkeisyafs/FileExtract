@@ -54,11 +54,13 @@ export function Extractor() {
             hasFiles={selectedFiles.length > 0}
           />
 
-          <ResultSection
-            result={result}
-            onCopy={copyToClipboard}
-            onDownload={downloadJSON}
-          />
+          {result && (
+            <ResultSection
+              result={result}
+              onCopy={copyToClipboard}
+              onDownload={downloadJSON}
+            />
+          )}
 
           {result && <ImageGallery result={result} />}
         </main>
