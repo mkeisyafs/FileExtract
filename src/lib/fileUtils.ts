@@ -1,5 +1,27 @@
 import JSZip from "jszip";
 
+/**
+ * Properly decode base64 to UTF-8 string
+ * The native atob() only handles Latin-1, so we need to use TextDecoder
+ * to properly decode UTF-8 multi-byte characters (Korean, Japanese, Chinese, etc.)
+ */
+function base64ToUtf8(base64: string): string {
+  try {
+    // First, decode base64 to binary string
+    const binaryString = atob(base64);
+    // Convert binary string to Uint8Array
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    // Use TextDecoder to properly decode UTF-8
+    return new TextDecoder("utf-8").decode(bytes);
+  } catch {
+    // Fallback: try direct atob (might work for ASCII-only content)
+    return atob(base64);
+  }
+}
+
 export type FileContent = {
   type: "text" | "image" | "binary";
   extension: string;
@@ -163,8 +185,8 @@ export async function extractPngMetadata(file: File): Promise<{
             );
 
             try {
-              // Decode base64 and parse JSON
-              const jsonText = atob(base64Text.trim());
+              // Decode base64 and parse JSON using UTF-8 aware decoder
+              const jsonText = base64ToUtf8(base64Text.trim());
               embeddedJson = JSON.parse(jsonText);
             } catch {
               // Try direct parse (might not be base64)
