@@ -5,6 +5,7 @@ import { FileList } from "../components/FileList";
 import { ActionButtons } from "../components/ActionButtons";
 import { ResultSection } from "../components/ResultSection";
 import { ImageGallery } from "../components/ImageGallery";
+import { Image, ImageOff } from "lucide-react";
 
 export function Extractor() {
   const {
@@ -13,6 +14,7 @@ export function Extractor() {
     isProcessing,
     toast,
     metadataOnly,
+    showAssets,
     progress,
     sizeWarning,
     addFiles,
@@ -22,6 +24,7 @@ export function Extractor() {
     copyToClipboard,
     downloadJSON,
     toggleMetadataOnly,
+    toggleShowAssets,
   } = useFileExtractor();
 
   return (
@@ -100,14 +103,40 @@ export function Extractor() {
           )}
 
           {result && (
-            <ResultSection
-              result={result}
-              onCopy={copyToClipboard}
-              onDownload={downloadJSON}
-            />
+            <>
+              {/* Assets toggle */}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={toggleShowAssets}
+                  className={`btn btn-sm gap-2 rounded-xl transition-all duration-300 ${
+                    showAssets
+                      ? "btn-secondary"
+                      : "btn-ghost border border-base-content/10"
+                  }`}
+                >
+                  {showAssets ? (
+                    <>
+                      <Image className="w-4 h-4" />
+                      Assets On
+                    </>
+                  ) : (
+                    <>
+                      <ImageOff className="w-4 h-4" />
+                      Assets Off
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <ResultSection
+                result={result}
+                onCopy={copyToClipboard}
+                onDownload={downloadJSON}
+              />
+            </>
           )}
 
-          {result && <ImageGallery result={result} />}
+          {result && showAssets && <ImageGallery result={result} />}
         </main>
 
         <footer className="mt-20 pt-8 border-t border-white/5 text-center">

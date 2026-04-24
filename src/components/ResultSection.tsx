@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Code,
   Copy,
@@ -24,24 +25,208 @@ type ViewMode = "table" | "json";
 // Page size for "Load More" pagination
 const PAGE_SIZE = 10;
 
-// Virtualized JSON view using plain <pre> instead of recursive React elements
+// Strip base64 image data from the result to keep JSON view lightweight
+function stripBase64ForDisplay(data: unknown): unknown {
+  if (data === null || data === undefined) return data;
+  if (typeof data === "string") {
+    if (
+      data.startsWith("data:image/") ||
+      (data.length > 500 && /^[A-Za-z0-9+/]+=*$/.test(data.slice(0, 100)))
+    ) {
+      return `[Base64 Image - ${(data.length / 1024).toFixed(1)} KB]`;
+    }
+    return data;
+  }
+  if (typeof data !== "object") return data;
+  if (Array.isArray(data)) return data.map(stripBase64ForDisplay);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    result[key] = stripBase64ForDisplay(value);
+  }
+  return result;
+}
+
+// Syntax-highlight a single JSON line
+function highlightJsonLine(line: string): React.ReactNode {
+  // Key: "someKey":
+  // String value: "someValue"
+  // Number, boolean, null
+  const parts: React.ReactNode[] = [];
+  let remaining = line;
+  let idx = 0;
+
+  // Leading whitespace
+  const leadingMatch = remaining.match(/^(\s*)/);
+  if (leadingMatch && leadingMatch[1]) {
+    parts.push(leadingMatch[1]);
+    remaining = remaining.slice(leadingMatch[1].length);
+  }
+
+  // Key pattern: "key":
+  const keyMatch = remaining.match(/^("(?:[^"\\]|\\.)*")\s*:/);
+  if (keyMatch) {
+    parts.push(
+      <span key={`k${idx++}`} className="text-[#9cdcfe]">
+        {keyMatch[1]}
+      </span>
+    );
+    parts.push(<span key={`c${idx++}`} className="text-gray-400">: </span>);
+    remaining = remaining.slice(keyMatch[0].length).trimStart();
+  }
+
+  // Value
+  if (remaining.length > 0) {
+    // String value
+    const strMatch = remaining.match(/^("(?:[^"\\]|\\.)*")(,?)$/);
+    if (strMatch) {
+      parts.push(
+        <span key={`v${idx++}`} className="text-[#ce9178]">
+          {strMatch[1]}
+        </span>
+      );
+      if (strMatch[2])
+        parts.push(
+          <span key={`cm${idx++}`} className="text-gray-400">
+            ,
+          </span>
+        );
+    }
+    // Number
+    else if (/^-?\d/.test(remaining)) {
+      const numMatch = remaining.match(/^(-?\d[\d.eE+-]*)(,?)$/);
+      if (numMatch) {
+        parts.push(
+          <span key={`v${idx++}`} className="text-[#b5cea8]">
+            {numMatch[1]}
+          </span>
+        );
+        if (numMatch[2])
+          parts.push(
+            <span key={`cm${idx++}`} className="text-gray-400">
+              ,
+            </span>
+          );
+      } else {
+        parts.push(remaining);
+      }
+    }
+    // Boolean / null
+    else if (/^(true|false|null)/.test(remaining)) {
+      const boolMatch = remaining.match(/^(true|false|null)(,?)$/);
+      if (boolMatch) {
+        parts.push(
+          <span key={`v${idx++}`} className="text-[#569cd6]">
+            {boolMatch[1]}
+          </span>
+        );
+        if (boolMatch[2])
+          parts.push(
+            <span key={`cm${idx++}`} className="text-gray-400">
+              ,
+            </span>
+          );
+      } else {
+        parts.push(remaining);
+      }
+    }
+    // Brackets
+    else if (/^[{[\]}]/.test(remaining)) {
+      const bracketChar = remaining[0];
+      const isOpen = bracketChar === "{" || bracketChar === "[";
+      parts.push(
+        <span
+          key={`b${idx++}`}
+          className={isOpen ? "text-[#ffd700]" : "text-[#ffd700]"}
+        >
+          {bracketChar}
+        </span>
+      );
+      const rest = remaining.slice(1);
+      if (rest) {
+        // Could be closing bracket with comma like "},", or "],"
+        if (rest === ",") {
+          parts.push(
+            <span key={`cm${idx++}`} className="text-gray-400">
+              ,
+            </span>
+          );
+        } else {
+          parts.push(rest);
+        }
+      }
+    } else {
+      parts.push(remaining);
+    }
+  }
+
+  return parts.length > 0 ? parts : line;
+}
+
+// Virtualized JSON view with syntax highlighting
 const VirtualizedJsonView = memo(function VirtualizedJsonView({
   data,
 }: {
   data: unknown;
 }) {
-  const jsonString = useMemo(() => {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  // Strip base64 and serialize once
+  const lines = useMemo(() => {
     try {
-      return JSON.stringify(data, null, 2);
+      const stripped = stripBase64ForDisplay(data);
+      return JSON.stringify(stripped, null, 2).split("\n");
     } catch {
-      return "Error: Unable to serialize data";
+      return ["Error: Unable to serialize data"];
     }
   }, [data]);
 
+  const virtualizer = useVirtualizer({
+    count: lines.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 20,
+    overscan: 30,
+  });
+
   return (
-    <pre className="font-mono text-xs md:text-sm text-[#d4d4d4] whitespace-pre-wrap break-all">
-      {jsonString}
-    </pre>
+    <div
+      ref={parentRef}
+      className="bg-[#1e1e1e] max-h-[600px] overflow-auto custom-scrollbar"
+    >
+      {/* Line count header */}
+      <div className="sticky top-0 z-10 bg-[#1e1e1e]/95 backdrop-blur-sm border-b border-white/5 px-4 py-1.5 flex justify-between items-center">
+        <span className="text-[10px] text-gray-500 font-mono uppercase tracking-wider">
+          JSON View
+        </span>
+        <span className="text-[10px] text-gray-500 font-mono">
+          {lines.length.toLocaleString()} lines
+        </span>
+      </div>
+
+      <div
+        className="relative font-mono text-xs md:text-sm leading-5"
+        style={{ height: `${virtualizer.getTotalSize()}px` }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => (
+          <div
+            key={virtualRow.index}
+            className="absolute top-0 left-0 w-full flex hover:bg-white/5"
+            style={{
+              height: `${virtualRow.size}px`,
+              transform: `translateY(${virtualRow.start}px)`,
+            }}
+          >
+            {/* Line number */}
+            <span className="select-none text-gray-600 text-right pr-4 pl-2 min-w-[3.5rem] border-r border-white/5 shrink-0">
+              {virtualRow.index + 1}
+            </span>
+            {/* Line content */}
+            <span className="pl-4 text-[#d4d4d4] whitespace-pre overflow-hidden text-ellipsis">
+              {highlightJsonLine(lines[virtualRow.index])}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 });
 
@@ -72,9 +257,7 @@ const FileCard = memo(function FileCard({
         <MetadataTable
           data={{
             Size: file.sizeFormatted,
-            "Last Modified": new Date(
-              file.lastModified
-            ).toLocaleString(),
+            "Last Modified": new Date(file.lastModified).toLocaleString(),
             "MIME Type": file.mimeType || "N/A",
             ...(file.isArchive && {
               "Archive Type": file.archiveType,
@@ -316,61 +499,65 @@ export const ResultSection = memo(function ResultSection({
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="px-6 py-3 bg-base-300/30 border-b border-base-content/10 sticky top-0 z-20 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
-            <input
-              type="text"
-              placeholder="Search metadata... (Press Enter)"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="input input-bordered input-sm w-full pl-10 pr-10 bg-base-100/50 focus:bg-base-100 transition-colors"
-            />
-            {searchInput && (
-              <button
-                onClick={clearSearch}
-                className="absolute right-3 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle text-base-content/40 hover:text-base-content"
-              >
-                <X className="w-3 h-3" />
-              </button>
+      {/* Search Bar - only in table mode */}
+      {viewMode === "table" && (
+        <div className="px-6 py-3 bg-base-300/30 border-b border-base-content/10 sticky top-0 z-20 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
+              <input
+                type="text"
+                placeholder="Search metadata... (Press Enter)"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="input input-bordered input-sm w-full pl-10 pr-10 bg-base-100/50 focus:bg-base-100 transition-colors"
+              />
+              {searchInput && (
+                <button
+                  onClick={clearSearch}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle text-base-content/40 hover:text-base-content"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+            {searchTerm && (
+              <div className="flex items-center gap-3 animate-[fadeIn_0.3s_ease-out]">
+                <div className="join shadow-sm">
+                  <button
+                    className="btn btn-sm join-item btn-square"
+                    onClick={() => scrollToMatch("prev")}
+                    title="Previous match"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                  <button
+                    className="btn btn-sm join-item btn-square"
+                    onClick={() => scrollToMatch("next")}
+                    title="Next match"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+                </div>
+                <span className="badge badge-primary badge-outline badge-lg gap-2">
+                  {matchCount > 0 ? (
+                    <>
+                      <span className="font-bold">
+                        {currentMatchIndex + 1}
+                      </span>
+                      <span className="opacity-60">/</span>
+                      <span className="font-bold">{matchCount}</span>
+                    </>
+                  ) : (
+                    "No matches"
+                  )}
+                </span>
+              </div>
             )}
           </div>
-          {searchTerm && (
-            <div className="flex items-center gap-3 animate-[fadeIn_0.3s_ease-out]">
-              <div className="join shadow-sm">
-                <button
-                  className="btn btn-sm join-item btn-square"
-                  onClick={() => scrollToMatch("prev")}
-                  title="Previous match"
-                >
-                  <ChevronUp className="w-4 h-4" />
-                </button>
-                <button
-                  className="btn btn-sm join-item btn-square"
-                  onClick={() => scrollToMatch("next")}
-                  title="Next match"
-                >
-                  <ChevronDown className="w-4 h-4" />
-                </button>
-              </div>
-              <span className="badge badge-primary badge-outline badge-lg gap-2">
-                {matchCount > 0 ? (
-                  <>
-                    <span className="font-bold">{currentMatchIndex + 1}</span>
-                    <span className="opacity-60">/</span>
-                    <span className="font-bold">{matchCount}</span>
-                  </>
-                ) : (
-                  "No matches"
-                )}
-              </span>
-            </div>
-          )}
         </div>
-      </div>
+      )}
 
       <div className="p-0 overflow-hidden">
         {viewMode === "table" ? (
@@ -431,9 +618,7 @@ export const ResultSection = memo(function ResultSection({
             )}
           </div>
         ) : (
-          <div className="bg-[#1e1e1e] p-6 max-h-[600px] overflow-auto custom-scrollbar font-mono text-sm leading-6">
-            <VirtualizedJsonView data={result} />
-          </div>
+          <VirtualizedJsonView data={result} />
         )}
       </div>
     </div>

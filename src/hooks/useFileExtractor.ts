@@ -32,6 +32,7 @@ export function useFileExtractor() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [metadataOnly, setMetadataOnly] = useState(false);
+  const [showAssets, setShowAssets] = useState(true);
   const [progress, setProgress] = useState<ExtractionProgress | null>(null);
   const [sizeWarning, setSizeWarning] = useState<string | null>(null);
 
@@ -293,12 +294,17 @@ export function useFileExtractor() {
     setMetadataOnly((prev) => !prev);
   }, []);
 
+  const toggleShowAssets = useCallback(() => {
+    setShowAssets((prev) => !prev);
+  }, []);
+
   return {
     selectedFiles,
     result,
     isProcessing,
     toast,
     metadataOnly,
+    showAssets,
     progress,
     sizeWarning,
     addFiles,
@@ -308,5 +314,6 @@ export function useFileExtractor() {
     copyToClipboard,
     downloadJSON,
     toggleMetadataOnly,
+    toggleShowAssets,
   };
 }

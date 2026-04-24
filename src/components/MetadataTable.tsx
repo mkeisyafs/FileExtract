@@ -480,7 +480,7 @@ const KeyCell = memo(function KeyCell({ keyName }: { keyName: string }) {
 });
 
 // Max entries to render before showing "Show More" in nested tables
-const NESTED_PAGE_SIZE = 50;
+const NESTED_PAGE_SIZE = 30;
 
 // Nested expandable table/list for objects/arrays
 const NestedObjectTable = memo(function NestedObjectTable({
@@ -632,12 +632,15 @@ const NestedObjectTable = memo(function NestedObjectTable({
   );
 });
 
+const TOP_LEVEL_PAGE_SIZE = 30;
+
 export const MetadataTable = memo(function MetadataTable({
   data,
   title = "Metadata",
   searchTerm = "",
 }: MetadataTableProps) {
   const [expanded, setExpanded] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(TOP_LEVEL_PAGE_SIZE);
 
   // Pre-compute matching paths once at the top level
   const matchPaths = useMemo(
@@ -656,6 +659,9 @@ export const MetadataTable = memo(function MetadataTable({
   if (entries.length === 0) {
     return null;
   }
+
+  const displayedEntries = entries.slice(0, visibleCount);
+  const hasMoreEntries = entries.length > visibleCount;
 
   return (
     <SearchContext.Provider value={searchTerm}>
@@ -694,7 +700,7 @@ export const MetadataTable = memo(function MetadataTable({
                 <div className="overflow-x-auto bg-linear-to-b from-transparent to-base-100/50">
                   <div className="p-2 sm:p-4 min-w-full w-max">
                     <div className="flex flex-col divide-y divide-white/5">
-                      {entries.map(([key, value]) => (
+                      {displayedEntries.map(([key, value]) => (
                         <div
                           key={key}
                           className="group transition-all duration-200 hover:bg-white/5 rounded-xl p-3 sm:px-4"
@@ -722,13 +728,34 @@ export const MetadataTable = memo(function MetadataTable({
                         </div>
                       ))}
                     </div>
+
+                    {/* Load more for top-level entries */}
+                    {hasMoreEntries && (
+                      <div className="flex justify-center pt-3 pb-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setVisibleCount(
+                              (prev) => prev + TOP_LEVEL_PAGE_SIZE
+                            );
+                          }}
+                          className="btn btn-ghost btn-sm text-primary gap-1"
+                        >
+                          <ChevronDown className="w-3 h-3" />
+                          Show more ({entries.length - visibleCount} remaining)
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Footer / Status bar */}
                 <div className="bg-base-300/30 p-2 px-4 text-[10px] text-base-content/30 border-t border-white/5 flex justify-between items-center font-mono uppercase tracking-widest">
                   <span>JSON Metadata viewer</span>
-                  <span>{entries.length} entries shown</span>
+                  <span>
+                    {displayedEntries.length}
+                    {hasMoreEntries ? ` / ${entries.length}` : ""} entries shown
+                  </span>
                 </div>
               </div>
             )}
