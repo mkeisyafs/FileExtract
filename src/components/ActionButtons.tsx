@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { CloudUpload, Trash2, Loader2, Sparkles } from "lucide-react";
 
 type ActionButtonsProps = {
@@ -7,7 +8,7 @@ type ActionButtonsProps = {
   hasFiles: boolean;
 };
 
-export function ActionButtons({
+export const ActionButtons = memo(function ActionButtons({
   onExtract,
   onClear,
   isProcessing,
@@ -46,4 +47,4 @@ export function ActionButtons({
       </button>
     </div>
   );
-}
+});

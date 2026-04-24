@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, memo } from "react";
 import type { DragEvent } from "react";
 import { Upload } from "lucide-react";
 import { ToggleSwitch } from "./ToggleSwitch";
@@ -9,7 +9,7 @@ type UploadAreaProps = {
   onToggleMetadata: () => void;
 };
 
-export function UploadArea({
+export const UploadArea = memo(function UploadArea({
   onFilesAdded,
   metadataOnly,
   onToggleMetadata,
@@ -92,4 +92,4 @@ export function UploadArea({
       </div>
     </div>
   );
-}
+});

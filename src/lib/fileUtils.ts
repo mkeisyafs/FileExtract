@@ -205,10 +205,14 @@ export async function extractPngMetadata(file: File): Promise<{
         if (chunkType === "IEND") break;
       }
 
-      // Convert to base64 for preview
-      const base64 = btoa(
-        bytes.reduce((data, byte) => data + String.fromCharCode(byte), "")
-      );
+      // Convert to base64 for preview using chunked approach (avoids O(n^2) string concat)
+      const CHUNK_SIZE = 8192;
+      let binaryStr = "";
+      for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+        const chunk = bytes.subarray(i, Math.min(i + CHUNK_SIZE, bytes.length));
+        binaryStr += String.fromCharCode(...chunk);
+      }
+      const base64 = btoa(binaryStr);
       const base64Image = `data:image/png;base64,${base64}`;
 
       resolve({ embeddedJson, base64Image });

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, memo, useCallback } from "react";
 import {
   Code,
   Copy,
@@ -21,74 +21,145 @@ type ResultSectionProps = {
 
 type ViewMode = "table" | "json";
 
-// Syntax Highlighter Component
-function SyntaxHighlightedJson({ data }: { data: unknown }) {
-  // ... (keep existing implementation)
-  const renderValue = (value: unknown): React.ReactNode => {
-    // ... (keep existing implementation)
-    if (value === null) return <span className="text-gray-500">null</span>;
-    if (value === undefined)
-      return <span className="text-gray-500">undefined</span>;
-    if (typeof value === "boolean")
-      return <span className="text-[#569cd6]">{value.toString()}</span>;
-    if (typeof value === "number")
-      return <span className="text-[#b5cea8]">{value}</span>;
-    if (typeof value === "string")
-      return <span className="text-[#ce9178]">"{value}"</span>;
+// Page size for "Load More" pagination
+const PAGE_SIZE = 10;
 
-    if (Array.isArray(value)) {
-      if (value.length === 0) return <span className="text-gray-400">[]</span>;
-      return (
-        <span>
-          <span className="text-[#ffd700]">[</span>
-          <div className="pl-4 border-l border-white/5">
-            {value.map((item, index) => (
-              <div key={index}>
-                {renderValue(item)}
-                {index < value.length - 1 && (
-                  <span className="text-gray-400">,</span>
-                )}
-              </div>
-            ))}
-          </div>
-          <span className="text-[#ffd700]">]</span>
-        </span>
-      );
+// Virtualized JSON view using plain <pre> instead of recursive React elements
+const VirtualizedJsonView = memo(function VirtualizedJsonView({
+  data,
+}: {
+  data: unknown;
+}) {
+  const jsonString = useMemo(() => {
+    try {
+      return JSON.stringify(data, null, 2);
+    } catch {
+      return "Error: Unable to serialize data";
     }
-
-    if (typeof value === "object") {
-      const entries = Object.entries(value as Record<string, unknown>);
-      if (entries.length === 0)
-        return <span className="text-gray-400">{"{}"}</span>;
-      return (
-        <span>
-          <span className="text-[#da70d6]">{"{"}</span>
-          <div className="pl-4 border-l border-white/5">
-            {entries.map(([key, val], index) => (
-              <div key={key}>
-                <span className="text-[#9cdcfe]">"{key}"</span>
-                <span className="text-gray-400">: </span>
-                {renderValue(val)}
-                {index < entries.length - 1 && (
-                  <span className="text-gray-400">,</span>
-                )}
-              </div>
-            ))}
-          </div>
-          <span className="text-[#da70d6]">{"}"}</span>
-        </span>
-      );
-    }
-
-    return <span>{String(value)}</span>;
-  };
+  }, [data]);
 
   return (
-    <div className="font-mono text-xs md:text-sm">{renderValue(data)}</div>
+    <pre className="font-mono text-xs md:text-sm text-[#d4d4d4] whitespace-pre-wrap break-all">
+      {jsonString}
+    </pre>
   );
-}
+});
 
-export function ResultSection({
+// Single file card component - memoized to prevent re-renders
+const FileCard = memo(function FileCard({
+  file,
+  index,
+  searchTerm,
+}: {
+  file: import("../lib/fileUtils").ExtractedFile;
+  index: number;
+  searchTerm: string;
+}) {
+  return (
+    <div
+      key={`${file.filename}-${index}`}
+      className="card bg-base-300/30 border border-base-content/5"
+    >
+      <div className="card-body p-4">
+        <h4 className="card-title text-base flex items-center gap-2">
+          <span className="badge badge-outline badge-sm">
+            {file.extension.toUpperCase()}
+          </span>
+          {file.filename}
+        </h4>
+
+        {/* Basic File Metadata */}
+        <MetadataTable
+          data={{
+            Size: file.sizeFormatted,
+            "Last Modified": new Date(
+              file.lastModified
+            ).toLocaleString(),
+            "MIME Type": file.mimeType || "N/A",
+            ...(file.isArchive && {
+              "Archive Type": file.archiveType,
+            }),
+            ...(file.totalFiles !== undefined && {
+              "Total Files in Archive": file.totalFiles,
+            }),
+          }}
+          title="File Info"
+          searchTerm={searchTerm}
+        />
+
+        {file.contents ? (
+          <div className="mt-4">
+            <MetadataTable
+              data={file.contents}
+              title="Archive Contents"
+              searchTerm={searchTerm}
+            />
+          </div>
+        ) : null}
+
+        {/* Parsed Content (for character cards, JSON files, etc.) */}
+        {file.contentParsed ? (
+          <div className="mt-4">
+            <MetadataTable
+              data={file.contentParsed}
+              title="Parsed Content"
+              searchTerm={searchTerm}
+            />
+          </div>
+        ) : null}
+
+        {/* Raw Content (for text files without parsing) */}
+        {file.content &&
+          !file.contentParsed &&
+          !file.isArchive &&
+          typeof file.content === "string" &&
+          file.content.length < 5000 && (
+            <div className="mt-4">
+              <details className="collapse collapse-arrow bg-base-300">
+                <summary className="collapse-title text-sm font-medium">
+                  Raw Content
+                </summary>
+                <div className="collapse-content">
+                  <pre className="text-xs whitespace-pre-wrap wrap-break-word overflow-auto max-h-60">
+                    {file.content}
+                  </pre>
+                </div>
+              </details>
+            </div>
+          )}
+
+        {/* File List for Archives */}
+        {file.fileList && file.fileList.length > 0 && (
+          <div className="mt-4">
+            <details className="collapse collapse-arrow bg-base-300">
+              <summary className="collapse-title text-sm font-medium">
+                File List ({file.fileList.length} files)
+              </summary>
+              <div className="collapse-content">
+                <ul className="text-xs space-y-1 font-mono max-h-40 overflow-auto">
+                  {file.fileList.map((filePath, idx) => (
+                    <li key={idx} className="text-base-content/70">
+                      {filePath}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </details>
+          </div>
+        )}
+
+        {/* Error Display */}
+        {file.error && (
+          <div className="alert alert-error mt-4">
+            <span>{file.error}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+export const ResultSection = memo(function ResultSection({
   result,
   onCopy,
   onDownload,
@@ -98,18 +169,22 @@ export function ResultSection({
   const [searchTerm, setSearchTerm] = useState("");
   const [matchCount, setMatchCount] = useState(0);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
-  const searchTimeout = useRef<NodeJS.Timeout>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset pagination when result changes
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [result]);
 
   // Reset match index when search term changes
   useEffect(() => {
     setCurrentMatchIndex(-1);
 
-    // Clear previous timeout
     if (searchTimeout.current) {
       clearTimeout(searchTimeout.current);
     }
 
-    // Slight delay to allow DOM to update before counting matches
     if (searchTerm) {
       searchTimeout.current = setTimeout(() => {
         const matches = document.querySelectorAll(".search-match");
@@ -126,56 +201,64 @@ export function ResultSection({
     };
   }, [searchTerm, viewMode]);
 
-  const scrollToMatch = (direction: "next" | "prev") => {
-    const matches = document.querySelectorAll(".search-match");
-    if (matches.length === 0) return;
+  const scrollToMatch = useCallback(
+    (direction: "next" | "prev") => {
+      const matches = document.querySelectorAll(".search-match");
+      if (matches.length === 0) return;
 
-    let newIndex =
-      direction === "next" ? currentMatchIndex + 1 : currentMatchIndex - 1;
+      let newIndex =
+        direction === "next" ? currentMatchIndex + 1 : currentMatchIndex - 1;
 
-    if (newIndex >= matches.length) newIndex = 0;
-    if (newIndex < 0) newIndex = matches.length - 1;
+      if (newIndex >= matches.length) newIndex = 0;
+      if (newIndex < 0) newIndex = matches.length - 1;
 
-    setCurrentMatchIndex(newIndex);
+      setCurrentMatchIndex(newIndex);
 
-    const target = matches[newIndex];
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
+      const target = matches[newIndex];
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
 
-    // Highlight the current match visualy
-    matches.forEach((m) => {
-      (m as HTMLElement).style.outline = "none";
-      (m as HTMLElement).style.backgroundColor = "";
-      (m as HTMLElement).style.color = "";
-      (m as HTMLElement).style.borderRadius = "";
-    });
+      matches.forEach((m) => {
+        (m as HTMLElement).style.outline = "none";
+        (m as HTMLElement).style.backgroundColor = "";
+        (m as HTMLElement).style.color = "";
+        (m as HTMLElement).style.borderRadius = "";
+      });
 
-    // Add active style to current match
-    const el = target as HTMLElement;
-    el.style.outline = "2px solid hsl(var(--p))";
-    el.style.outlineOffset = "2px";
-    el.style.backgroundColor = "hsl(var(--p))";
-    el.style.color = "hsl(var(--pc))";
-    el.style.borderRadius = "2px";
+      const el = target as HTMLElement;
+      el.style.outline = "2px solid hsl(var(--p))";
+      el.style.outlineOffset = "2px";
+      el.style.backgroundColor = "hsl(var(--p))";
+      el.style.color = "hsl(var(--pc))";
+      el.style.borderRadius = "2px";
+    },
+    [currentMatchIndex]
+  );
 
-    // Remove style after some time or keep it?
-    // Keeping it is better for navigation context.
-  };
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") {
+        setSearchTerm(searchInput.trim());
+      }
+    },
+    [searchInput]
+  );
 
-  // Handle Enter key press
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      setSearchTerm(searchInput.trim());
-    }
-  };
-
-  // Clear search
-  const clearSearch = () => {
+  const clearSearch = useCallback(() => {
     setSearchInput("");
     setSearchTerm("");
-  };
+  }, []);
 
-  // Count total matches (using DOM elements for navigation)
-  // We rely on the useEffect above to set matchCount based on visible .search-match elements
+  const loadMore = useCallback(() => {
+    setVisibleCount((prev) => prev + PAGE_SIZE);
+  }, []);
+
+  // Memoize visible files slice
+  const visibleFiles = useMemo(
+    () => result.files.slice(0, visibleCount),
+    [result.files, visibleCount]
+  );
+
+  const hasMore = visibleCount < result.files.length;
 
   if (!result) return null;
 
@@ -324,116 +407,35 @@ export function ResultSection({
               </div>
             </div>
 
-            {/* File Details */}
-            {result.files.map((file, index) => (
-              <div
+            {/* File Details - paginated */}
+            {visibleFiles.map((file, index) => (
+              <FileCard
                 key={`${file.filename}-${index}`}
-                className="card bg-base-300/30 border border-base-content/5"
-              >
-                <div className="card-body p-4">
-                  <h4 className="card-title text-base flex items-center gap-2">
-                    <span className="badge badge-outline badge-sm">
-                      {file.extension.toUpperCase()}
-                    </span>
-                    {file.filename}
-                  </h4>
-
-                  {/* Basic File Metadata */}
-                  <MetadataTable
-                    data={{
-                      Size: file.sizeFormatted,
-                      "Last Modified": new Date(
-                        file.lastModified
-                      ).toLocaleString(),
-                      "MIME Type": file.mimeType || "N/A",
-                      ...(file.isArchive && {
-                        "Archive Type": file.archiveType,
-                      }),
-                      ...(file.totalFiles !== undefined && {
-                        "Total Files in Archive": file.totalFiles,
-                      }),
-                    }}
-                    title="📁 File Info"
-                    searchTerm={searchTerm}
-                  />
-
-                  {file.contents ? (
-                    <div className="mt-4">
-                      <MetadataTable
-                        data={file.contents}
-                        title="📦 Archive Contents"
-                        searchTerm={searchTerm}
-                      />
-                    </div>
-                  ) : null}
-
-                  {/* Parsed Content (for character cards, JSON files, etc.) */}
-                  {file.contentParsed ? (
-                    <div className="mt-4">
-                      <MetadataTable
-                        data={file.contentParsed}
-                        title="🔍 Parsed Content"
-                        searchTerm={searchTerm}
-                      />
-                    </div>
-                  ) : null}
-
-                  {/* Raw Content (for text files without parsing) */}
-                  {file.content &&
-                    !file.contentParsed &&
-                    !file.isArchive &&
-                    typeof file.content === "string" &&
-                    file.content.length < 5000 && (
-                      <div className="mt-4">
-                        <details className="collapse collapse-arrow bg-base-300">
-                          <summary className="collapse-title text-sm font-medium">
-                            📝 Raw Content
-                          </summary>
-                          <div className="collapse-content">
-                            <pre className="text-xs whitespace-pre-wrap wrap-break-word overflow-auto max-h-60">
-                              {file.content}
-                            </pre>
-                          </div>
-                        </details>
-                      </div>
-                    )}
-
-                  {/* File List for Archives */}
-                  {file.fileList && file.fileList.length > 0 && (
-                    <div className="mt-4">
-                      <details className="collapse collapse-arrow bg-base-300">
-                        <summary className="collapse-title text-sm font-medium">
-                          📋 File List ({file.fileList.length} files)
-                        </summary>
-                        <div className="collapse-content">
-                          <ul className="text-xs space-y-1 font-mono max-h-40 overflow-auto">
-                            {file.fileList.map((filePath, idx) => (
-                              <li key={idx} className="text-base-content/70">
-                                {filePath}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </details>
-                    </div>
-                  )}
-
-                  {/* Error Display */}
-                  {file.error && (
-                    <div className="alert alert-error mt-4">
-                      <span>{file.error}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+                file={file}
+                index={index}
+                searchTerm={searchTerm}
+              />
             ))}
+
+            {/* Load More button */}
+            {hasMore && (
+              <div className="flex justify-center pt-2">
+                <button
+                  onClick={loadMore}
+                  className="btn btn-outline btn-primary btn-sm gap-2"
+                >
+                  <ChevronDown className="w-4 h-4" />
+                  Load More ({result.files.length - visibleCount} remaining)
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="bg-[#1e1e1e] p-6 max-h-[600px] overflow-auto custom-scrollbar font-mono text-sm leading-6">
-            <SyntaxHighlightedJson data={result} />
+            <VirtualizedJsonView data={result} />
           </div>
         )}
       </div>
     </div>
   );
-}
+});

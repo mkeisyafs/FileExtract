@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { FileText } from "lucide-react";
 
-export function Header() {
+export const Header = memo(function Header() {
   return (
     <header className="relative text-center mb-16 pt-10">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-primary/20 blur-3xl rounded-full -z-10"></div>
@@ -26,4 +27,4 @@ export function Header() {
       </p>
     </header>
   );
-}
+});

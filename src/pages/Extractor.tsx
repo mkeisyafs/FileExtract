@@ -13,6 +13,8 @@ export function Extractor() {
     isProcessing,
     toast,
     metadataOnly,
+    progress,
+    sizeWarning,
     addFiles,
     removeFile,
     clearFiles,
@@ -27,7 +29,7 @@ export function Extractor() {
       className="min-h-screen relative overflow-hidden selection:bg-primary/30 selection:text-primary-content"
       data-theme="dark"
     >
-      {/* Background Effects */}
+      {/* Background Effects - optimized with will-change and contain */}
       <div className="fixed inset-0 -z-10 pointer-events-none bg-[#0f0f1a] bg-grid">
         <div className="absolute inset-0 bg-linear-to-b from-transparent via-[#0f0f1a]/50 to-[#0f0f1a]"></div>
         <div className="blob blob-1 opacity-20 mix-blend-screen"></div>
@@ -45,6 +47,26 @@ export function Extractor() {
             onToggleMetadata={toggleMetadataOnly}
           />
 
+          {/* Size/count warning */}
+          {sizeWarning && (
+            <div className="alert alert-warning shadow-lg">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="stroke-current shrink-0 h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
+                />
+              </svg>
+              <span>{sizeWarning}</span>
+            </div>
+          )}
+
           <FileList files={selectedFiles} onRemoveFile={removeFile} />
 
           <ActionButtons
@@ -53,6 +75,29 @@ export function Extractor() {
             isProcessing={isProcessing}
             hasFiles={selectedFiles.length > 0}
           />
+
+          {/* Progress indicator */}
+          {progress && (
+            <div className="card bg-base-200/50 border border-base-content/10 p-4">
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-base-content/70">
+                      Processing: {progress.currentFile || "..."}
+                    </span>
+                    <span className="text-primary font-mono">
+                      {progress.current}/{progress.total}
+                    </span>
+                  </div>
+                  <progress
+                    className="progress progress-primary w-full"
+                    value={progress.current}
+                    max={progress.total}
+                  ></progress>
+                </div>
+              </div>
+            </div>
+          )}
 
           {result && (
             <ResultSection

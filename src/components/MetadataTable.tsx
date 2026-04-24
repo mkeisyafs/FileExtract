@@ -1,4 +1,12 @@
-import { useState, createContext, useContext, useMemo, useEffect } from "react";
+import {
+  useState,
+  createContext,
+  useContext,
+  useMemo,
+  useEffect,
+  memo,
+  useCallback,
+} from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -24,6 +32,66 @@ type MetadataTableProps = {
 // Context to share searchTerm with nested components
 const SearchContext = createContext<string>("");
 
+// Context to share pre-computed matching paths
+const MatchPathsContext = createContext<Set<string>>(new Set());
+
+// Pre-compute all matching paths in the data tree
+function computeMatchingPaths(
+  data: unknown,
+  searchTerm: string,
+  currentPath: string = ""
+): Set<string> {
+  const paths = new Set<string>();
+  if (!searchTerm || data === null || data === undefined) return paths;
+
+  const lowerSearch = searchTerm.toLowerCase();
+
+  function traverse(obj: unknown, path: string) {
+    if (obj === null || obj === undefined) return;
+
+    if (typeof obj === "string") {
+      if (obj.toLowerCase().includes(lowerSearch)) {
+        paths.add(path);
+        // Add all ancestor paths
+        let p = path;
+        while (p.includes(".")) {
+          p = p.substring(0, p.lastIndexOf("."));
+          paths.add(p);
+        }
+      }
+    } else if (typeof obj === "number" || typeof obj === "boolean") {
+      if (String(obj).toLowerCase().includes(lowerSearch)) {
+        paths.add(path);
+        let p = path;
+        while (p.includes(".")) {
+          p = p.substring(0, p.lastIndexOf("."));
+          paths.add(p);
+        }
+      }
+    } else if (Array.isArray(obj)) {
+      obj.forEach((item, index) => {
+        traverse(item, `${path}.${index}`);
+      });
+    } else if (typeof obj === "object") {
+      Object.entries(obj as Record<string, unknown>).forEach(([key, value]) => {
+        const keyPath = path ? `${path}.${key}` : key;
+        if (key.toLowerCase().includes(lowerSearch)) {
+          paths.add(keyPath);
+          let p = keyPath;
+          while (p.includes(".")) {
+            p = p.substring(0, p.lastIndexOf("."));
+            paths.add(p);
+          }
+        }
+        traverse(value, keyPath);
+      });
+    }
+  }
+
+  traverse(data, currentPath);
+  return paths;
+}
+
 // Check if a string is a valid base64 image
 function isBase64Image(value: unknown): boolean {
   if (typeof value !== "string") return false;
@@ -38,7 +106,6 @@ function getBase64ImageSrc(value: string): string {
   if (value.startsWith("data:image/")) {
     return value;
   }
-  // Assume PNG if no data: prefix
   return `data:image/png;base64,${value}`;
 }
 
@@ -55,7 +122,7 @@ function matchesSearch(text: string, searchTerm: string): boolean {
 }
 
 // Highlight matching text
-function HighlightedText({
+const HighlightedText = memo(function HighlightedText({
   text,
   searchTerm,
 }: {
@@ -85,10 +152,10 @@ function HighlightedText({
       )}
     </>
   );
-}
+});
 
 // Type Indicator Icon
-function TypeIcon({ value }: { value: unknown }) {
+const TypeIcon = memo(function TypeIcon({ value }: { value: unknown }) {
   if (value === null || value === undefined)
     return <Binary className="w-3 h-3 opacity-40" />;
   if (typeof value === "number") return <Hash className="w-3 h-3 text-info" />;
@@ -100,18 +167,21 @@ function TypeIcon({ value }: { value: unknown }) {
   if (typeof value === "object")
     return <Box className="w-3 h-3 text-primary" />;
   return <Type className="w-3 h-3 opacity-50" />;
-}
+});
 
 // Copy Button Component
-function CopyButton({ text }: { text: string }) {
+const CopyButton = memo(function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const handleCopy = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    },
+    [text]
+  );
 
   return (
     <button
@@ -126,18 +196,24 @@ function CopyButton({ text }: { text: string }) {
       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
     </button>
   );
-}
+});
 
 // Lightbox component for viewing images
-function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
-  const downloadImage = () => {
+const ImageLightbox = memo(function ImageLightbox({
+  src,
+  onClose,
+}: {
+  src: string;
+  onClose: () => void;
+}) {
+  const downloadImage = useCallback(() => {
     const link = document.createElement("a");
     link.href = src;
     link.download = `image_${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, [src]);
 
   return (
     <div
@@ -171,10 +247,10 @@ function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
       </div>
     </div>
   );
-}
+});
 
 // Render a single value cell
-function ValueCell({ value }: { value: unknown }) {
+const ValueCell = memo(function ValueCell({ value }: { value: unknown }) {
   const [showLightbox, setShowLightbox] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const searchTerm = useContext(SearchContext);
@@ -257,6 +333,7 @@ function ValueCell({ value }: { value: unknown }) {
                 src={imgSrc}
                 alt="Base64 Content"
                 className="w-20 h-20 object-cover transform transition-transform duration-500 group-hover:scale-110"
+                loading="lazy"
               />
               <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                 <Maximize2 className="w-5 h-5 text-white drop-shadow-lg" />
@@ -376,10 +453,10 @@ function ValueCell({ value }: { value: unknown }) {
       <Box className="w-3 h-3" /> Complex Type
     </span>
   );
-}
+});
 
 // Key cell with highlighting and styling
-function KeyCell({ keyName }: { keyName: string }) {
+const KeyCell = memo(function KeyCell({ keyName }: { keyName: string }) {
   const searchTerm = useContext(SearchContext);
   const isMatch = matchesSearch(keyName, searchTerm);
 
@@ -400,45 +477,35 @@ function KeyCell({ keyName }: { keyName: string }) {
       </span>
     </div>
   );
-}
+});
+
+// Max entries to render before showing "Show More" in nested tables
+const NESTED_PAGE_SIZE = 50;
 
 // Nested expandable table/list for objects/arrays
-function NestedObjectTable({
+const NestedObjectTable = memo(function NestedObjectTable({
   data,
   depth = 0,
+  path = "",
 }: {
   data: unknown;
   depth?: number;
+  path?: string;
 }) {
-  const searchTerm = useContext(SearchContext);
+  const matchPaths = useContext(MatchPathsContext);
 
-  // Check if any children match the search term
+  // Check if this path or any child path has matches
   const hasMatchingChildren = useMemo(() => {
-    if (!searchTerm) return false;
-
-    function checkMatches(obj: unknown): boolean {
-      if (obj === null || obj === undefined) return false;
-
-      if (typeof obj === "string") {
-        return matchesSearch(obj, searchTerm);
-      } else if (typeof obj === "number" || typeof obj === "boolean") {
-        return matchesSearch(String(obj), searchTerm);
-      } else if (Array.isArray(obj)) {
-        return obj.some(checkMatches);
-      } else if (typeof obj === "object") {
-        return Object.entries(obj as Record<string, unknown>).some(
-          ([key, value]) =>
-            matchesSearch(key, searchTerm) || checkMatches(value)
-        );
-      }
-      return false;
+    if (matchPaths.size === 0) return false;
+    // Check if any path in the set starts with our current path
+    for (const p of matchPaths) {
+      if (p === path || p.startsWith(path + ".")) return true;
     }
+    return false;
+  }, [matchPaths, path]);
 
-    return checkMatches(data);
-  }, [data, searchTerm]);
-
-  // Auto-expand if there are matching children
   const [expanded, setExpanded] = useState(depth < 1 || hasMatchingChildren);
+  const [visibleEntries, setVisibleEntries] = useState(NESTED_PAGE_SIZE);
 
   useEffect(() => {
     if (hasMatchingChildren) {
@@ -466,6 +533,9 @@ function NestedObjectTable({
       </span>
     );
   }
+
+  const displayedEntries = entries.slice(0, visibleEntries);
+  const hasMoreEntries = entries.length > visibleEntries;
 
   return (
     <div className="w-full my-1">
@@ -509,48 +579,71 @@ function NestedObjectTable({
         )}
       </button>
 
-      <div
-        className={`
-          overflow-hidden transition-all duration-300 ease-in-out
-          ${expanded ? "max-h-[5000px] opacity-100" : "max-h-0 opacity-0"}
-      `}
-      >
-        <div className="mt-2 ml-3 pl-3 border-l file:border-primary/10 relative">
+      {/* Instant toggle - no max-h transition for performance */}
+      {expanded && (
+        <div className="mt-2 ml-3 pl-3 border-l border-primary/10 relative">
           {/* Tree connection line */}
           <div className="absolute top-0 bottom-0 -left-px w-px bg-linear-to-b from-primary/30 to-transparent"></div>
 
           <div className="flex flex-col gap-1">
-            {entries.map(([key, value]) => (
-              <div
-                key={key}
-                className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-4 p-2 rounded-lg hover:bg-base-100/50 transition-colors border border-transparent hover:border-white/5"
-              >
-                <div className="flex items-center gap-2 min-w-[140px] max-w-[200px] py-1">
-                  <TypeIcon value={value} />
-                  <KeyCell keyName={key} />
+            {displayedEntries.map(([key, value]) => {
+              const childPath = path ? `${path}.${key}` : key;
+              return (
+                <div
+                  key={key}
+                  className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-4 p-2 rounded-lg hover:bg-base-100/50 transition-colors border border-transparent hover:border-white/5"
+                >
+                  <div className="flex items-center gap-2 min-w-[140px] max-w-[200px] py-1">
+                    <TypeIcon value={value} />
+                    <KeyCell keyName={key} />
+                  </div>
+                  <div className="flex-1 min-w-0 py-0.5">
+                    {typeof value === "object" && value !== null ? (
+                      <NestedObjectTable
+                        data={value}
+                        depth={depth + 1}
+                        path={childPath}
+                      />
+                    ) : (
+                      <ValueCell value={value} />
+                    )}
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0 py-0.5">
-                  {typeof value === "object" && value !== null ? (
-                    <NestedObjectTable data={value} depth={depth + 1} />
-                  ) : (
-                    <ValueCell value={value} />
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+
+          {/* Load more entries for large nested objects */}
+          {hasMoreEntries && (
+            <div className="flex justify-center pt-2 pb-1">
+              <button
+                onClick={() =>
+                  setVisibleEntries((prev) => prev + NESTED_PAGE_SIZE)
+                }
+                className="btn btn-ghost btn-xs text-primary"
+              >
+                Show more ({entries.length - visibleEntries} remaining)
+              </button>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
-}
+});
 
-export function MetadataTable({
+export const MetadataTable = memo(function MetadataTable({
   data,
   title = "Metadata",
   searchTerm = "",
 }: MetadataTableProps) {
   const [expanded, setExpanded] = useState(true);
+
+  // Pre-compute matching paths once at the top level
+  const matchPaths = useMemo(
+    () => computeMatchingPaths(data, searchTerm),
+    [data, searchTerm]
+  );
 
   if (!data || typeof data !== "object") {
     return null;
@@ -566,79 +659,82 @@ export function MetadataTable({
 
   return (
     <SearchContext.Provider value={searchTerm}>
-      <div className="w-full animate-[fadeIn_0.5s_ease-out]">
-        <div className="bg-base-200/30 backdrop-blur-xl rounded-2xl border border-white/5 shadow-2xl overflow-hidden box-decoration-clone">
-          {/* Header */}
-          <div
-            onClick={() => setExpanded(!expanded)}
-            className="cursor-pointer bg-linear-to-r from-base-200 to-base-300/50 p-4 border-b border-white/5 flex justify-between items-center group select-none relative overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-
-            <h3 className="font-bold text-lg flex items-center gap-3 relative z-10 text-primary-content/90 group-hover:text-primary transition-colors">
-              <div className="p-2 rounded-lg bg-primary/10 text-primary shadow-sm group-hover:scale-110 transition-transform duration-300">
-                <Database className="w-5 h-5" />
-              </div>
-              {title}
-              <span className="badge badge-sm badge-ghost font-mono opacity-50">
-                {entries.length} keys
-              </span>
-            </h3>
-
+      <MatchPathsContext.Provider value={matchPaths}>
+        <div className="w-full animate-[fadeIn_0.5s_ease-out]">
+          <div className="bg-base-200/30 backdrop-blur-xl rounded-2xl border border-white/5 shadow-2xl overflow-hidden box-decoration-clone">
+            {/* Header */}
             <div
-              className={`p-2 rounded-full hover:bg-white/10 transition-all duration-300 ${
-                expanded ? "rotate-180 bg-white/5" : ""
-              }`}
+              onClick={() => setExpanded(!expanded)}
+              className="cursor-pointer bg-linear-to-r from-base-200 to-base-300/50 p-4 border-b border-white/5 flex justify-between items-center group select-none relative overflow-hidden"
             >
-              <ChevronDown className="w-5 h-5 text-base-content/70" />
-            </div>
-          </div>
+              <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
 
-          {/* Content */}
-          <div
-            className={`transition-all duration-500 ease-in-out ${
-              expanded ? "max-h-[5000px] opacity-100" : "max-h-0 opacity-0"
-            }`}
-          >
-            <div className="overflow-x-auto bg-linear-to-b from-transparent to-base-100/50">
-              <div className="p-2 sm:p-4 min-w-full w-max">
-                <div className="flex flex-col divide-y divide-white/5">
-                  {entries.map(([key, value]) => (
-                    <div
-                      key={key}
-                      className="group transition-all duration-200 hover:bg-white/5 rounded-xl p-3 sm:px-4"
-                    >
-                      <div className="flex flex-col md:flex-row md:items-start gap-2 md:gap-4">
-                        <div className="w-full md:w-auto md:min-w-[180px] md:max-w-[220px] pt-1 flex items-center gap-2 text-secondary/90 shrink-0">
-                          <div className="opacity-40 group-hover:opacity-100 transition-opacity">
-                            <TypeIcon value={value} />
-                          </div>
-                          <KeyCell keyName={key} />
-                        </div>
-                        <div className="flex-1 overflow-hidden min-w-0">
-                          {typeof value === "object" && value !== null ? (
-                            <div className="bg-base-100/40 rounded-lg p-2 border border-white/5">
-                              <NestedObjectTable data={value} />
+              <h3 className="font-bold text-lg flex items-center gap-3 relative z-10 text-primary-content/90 group-hover:text-primary transition-colors">
+                <div className="p-2 rounded-lg bg-primary/10 text-primary shadow-sm group-hover:scale-110 transition-transform duration-300">
+                  <Database className="w-5 h-5" />
+                </div>
+                {title}
+                <span className="badge badge-sm badge-ghost font-mono opacity-50">
+                  {entries.length} keys
+                </span>
+              </h3>
+
+              <div
+                className={`p-2 rounded-full hover:bg-white/10 transition-all duration-300 ${
+                  expanded ? "rotate-180 bg-white/5" : ""
+                }`}
+              >
+                <ChevronDown className="w-5 h-5 text-base-content/70" />
+              </div>
+            </div>
+
+            {/* Content - instant toggle, no max-h transition */}
+            {expanded && (
+              <div>
+                <div className="overflow-x-auto bg-linear-to-b from-transparent to-base-100/50">
+                  <div className="p-2 sm:p-4 min-w-full w-max">
+                    <div className="flex flex-col divide-y divide-white/5">
+                      {entries.map(([key, value]) => (
+                        <div
+                          key={key}
+                          className="group transition-all duration-200 hover:bg-white/5 rounded-xl p-3 sm:px-4"
+                        >
+                          <div className="flex flex-col md:flex-row md:items-start gap-2 md:gap-4">
+                            <div className="w-full md:w-auto md:min-w-[180px] md:max-w-[220px] pt-1 flex items-center gap-2 text-secondary/90 shrink-0">
+                              <div className="opacity-40 group-hover:opacity-100 transition-opacity">
+                                <TypeIcon value={value} />
+                              </div>
+                              <KeyCell keyName={key} />
                             </div>
-                          ) : (
-                            <ValueCell value={value} />
-                          )}
+                            <div className="flex-1 overflow-hidden min-w-0">
+                              {typeof value === "object" && value !== null ? (
+                                <div className="bg-base-100/40 rounded-lg p-2 border border-white/5">
+                                  <NestedObjectTable
+                                    data={value}
+                                    path={key}
+                                  />
+                                </div>
+                              ) : (
+                                <ValueCell value={value} />
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
+                </div>
+
+                {/* Footer / Status bar */}
+                <div className="bg-base-300/30 p-2 px-4 text-[10px] text-base-content/30 border-t border-white/5 flex justify-between items-center font-mono uppercase tracking-widest">
+                  <span>JSON Metadata viewer</span>
+                  <span>{entries.length} entries shown</span>
                 </div>
               </div>
-            </div>
-
-            {/* Footer / Status bar */}
-            <div className="bg-base-300/30 p-2 px-4 text-[10px] text-base-content/30 border-t border-white/5 flex justify-between items-center font-mono uppercase tracking-widest">
-              <span>JSON Metadata viewer</span>
-              <span>{entries.length} entries shown</span>
-            </div>
+            )}
           </div>
         </div>
-      </div>
+      </MatchPathsContext.Provider>
     </SearchContext.Provider>
   );
-}
+});

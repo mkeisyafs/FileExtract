@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 type ToggleSwitchProps = {
   isOn: boolean;
   onToggle: () => void;
@@ -5,7 +7,7 @@ type ToggleSwitchProps = {
   labelOn: string;
 };
 
-export function ToggleSwitch({
+export const ToggleSwitch = memo(function ToggleSwitch({
   isOn,
   onToggle,
   labelOff,
@@ -44,4 +46,4 @@ export function ToggleSwitch({
       </div>
     </div>
   );
-}
+});

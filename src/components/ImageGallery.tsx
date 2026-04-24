@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Image, Download, X } from "lucide-react";
+import { useState, useMemo, memo, useCallback } from "react";
+import { Image, Download, X, ChevronDown } from "lucide-react";
 import type { ExtractionResult } from "../lib/fileUtils";
 
 type ImageGalleryProps = {
@@ -13,45 +13,112 @@ type ImageItem = {
   extension: string;
 };
 
-export function ImageGallery({ result }: ImageGalleryProps) {
+const IMAGE_PAGE_SIZE = 12;
+
+// Memoized image card to prevent re-renders
+const ImageCard = memo(function ImageCard({
+  image,
+  index,
+  onSelect,
+  onDownload,
+}: {
+  image: ImageItem;
+  index: number;
+  onSelect: (image: ImageItem) => void;
+  onDownload: (image: ImageItem) => void;
+}) {
+  return (
+    <div
+      key={`${image.filename}-${image.path}-${index}`}
+      className="group relative bg-base-300 rounded-xl overflow-hidden aspect-square cursor-pointer hover:ring-2 hover:ring-primary transition-all"
+      onClick={() => onSelect(image)}
+    >
+      <img
+        src={image.content}
+        alt={image.path}
+        className="w-full h-full object-cover"
+        loading="lazy"
+        decoding="async"
+      />
+      <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute bottom-0 left-0 right-0 p-2">
+          <p className="text-xs text-white truncate">
+            {image.path.split("/").pop()}
+          </p>
+        </div>
+      </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDownload(image);
+        }}
+        className="btn btn-circle btn-xs btn-ghost absolute top-2 right-2 opacity-0 group-hover:opacity-100 bg-black/50 hover:bg-primary"
+      >
+        <Download className="w-3 h-3 text-white" />
+      </button>
+    </div>
+  );
+});
+
+export const ImageGallery = memo(function ImageGallery({
+  result,
+}: ImageGalleryProps) {
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
+  const [visibleCount, setVisibleCount] = useState(IMAGE_PAGE_SIZE);
 
-  // Extract all images from the result
-  const images: ImageItem[] = [];
+  // Memoize image extraction to avoid recomputing on every render
+  const images = useMemo(() => {
+    const imgs: ImageItem[] = [];
+    result.files.forEach((file) => {
+      if (file.contents) {
+        Object.entries(file.contents).forEach(([path, content]) => {
+          if (content.type === "image" && "content" in content) {
+            imgs.push({
+              filename: file.filename,
+              path,
+              content: (content as { content: string }).content,
+              extension: content.extension,
+            });
+          }
+        });
+      }
+    });
+    return imgs;
+  }, [result]);
 
-  result.files.forEach((file) => {
-    if (file.contents) {
-      Object.entries(file.contents).forEach(([path, content]) => {
-        if (content.type === "image" && "content" in content) {
-          images.push({
-            filename: file.filename,
-            path,
-            content: (content as { content: string }).content,
-            extension: content.extension,
-          });
-        }
-      });
-    }
-  });
+  const visibleImages = useMemo(
+    () => images.slice(0, visibleCount),
+    [images, visibleCount]
+  );
 
-  if (images.length === 0) {
-    return null;
-  }
+  const hasMore = visibleCount < images.length;
 
-  const downloadImage = (image: ImageItem) => {
+  const downloadImage = useCallback((image: ImageItem) => {
     const link = document.createElement("a");
     link.href = image.content;
     link.download = image.path.split("/").pop() || `image.${image.extension}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, []);
 
-  const downloadAllImages = () => {
+  const downloadAllImages = useCallback(() => {
     images.forEach((image, index) => {
       setTimeout(() => downloadImage(image), index * 200);
     });
-  };
+  }, [images, downloadImage]);
+
+  const handleSelect = useCallback((image: ImageItem) => {
+    setSelectedImage(image);
+  }, []);
+
+  const loadMore = useCallback(() => {
+    setVisibleCount((prev) => prev + IMAGE_PAGE_SIZE);
+  }, []);
+
+  if (images.length === 0) {
+    return null;
+  }
 
   return (
     <div className="card bg-base-200/50 border border-base-content/10 overflow-hidden mt-6">
@@ -71,36 +138,29 @@ export function ImageGallery({ result }: ImageGalleryProps) {
 
       <div className="p-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {images.map((image, index) => (
-            <div
+          {visibleImages.map((image, index) => (
+            <ImageCard
               key={`${image.filename}-${image.path}-${index}`}
-              className="group relative bg-base-300 rounded-xl overflow-hidden aspect-square cursor-pointer hover:ring-2 hover:ring-primary transition-all"
-              onClick={() => setSelectedImage(image)}
-            >
-              <img
-                src={image.content}
-                alt={image.path}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="absolute bottom-0 left-0 right-0 p-2">
-                  <p className="text-xs text-white truncate">
-                    {image.path.split("/").pop()}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  downloadImage(image);
-                }}
-                className="btn btn-circle btn-xs btn-ghost absolute top-2 right-2 opacity-0 group-hover:opacity-100 bg-black/50 hover:bg-primary"
-              >
-                <Download className="w-3 h-3 text-white" />
-              </button>
-            </div>
+              image={image}
+              index={index}
+              onSelect={handleSelect}
+              onDownload={downloadImage}
+            />
           ))}
         </div>
+
+        {/* Load More */}
+        {hasMore && (
+          <div className="flex justify-center pt-4">
+            <button
+              onClick={loadMore}
+              className="btn btn-outline btn-secondary btn-sm gap-2"
+            >
+              <ChevronDown className="w-4 h-4" />
+              Load More Images ({images.length - visibleCount} remaining)
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Lightbox Modal */}
@@ -141,4 +201,4 @@ export function ImageGallery({ result }: ImageGalleryProps) {
       )}
     </div>
   );
-}
+});
